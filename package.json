@@ -1,6 +1,6 @@
 {
   "name": "@veenweiden-innovatiecentrum/vic-redactie",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "De redactietafel als bibliotheek: tekstlaag-endpoint (Vercel/Node), redactiemodus voor in de pagina, verwerk- en tafelscripts (Python) en de skill voor een sessie. Elke documentrepo pint een git-tag, zoals bij vic-huisstijl.",
   "license": "UNLICENSED",
   "repository": {

@@ -174,19 +174,37 @@ class Endpoint:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
+            if e.code in (403, 407) and 'tunnel' in str(e).lower() or e.code == 407:
+                sys.exit(onbereikbaar(self.site, e))
             try:
                 fout = json.loads(e.read()).get('fout')
             except Exception:
                 fout = str(e)
             sys.exit(f'de tafel antwoordde {e.code}: {fout}')
+        except (urllib.error.URLError, OSError) as e:
+            sys.exit(onbereikbaar(self.site, e))
 
     def laag(self):
         return self.vraag('/api/tekstlaag')
 
     def pagina(self):
         req = urllib.request.Request(self.site + '/', headers={'Cache-Control': 'no-cache'})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read().decode('utf-8')
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.read().decode('utf-8')
+        except (urllib.error.URLError, OSError) as e:
+            sys.exit(onbereikbaar(self.site, e))
+
+
+def onbereikbaar(site, e):
+    """Eén melding voor elke vorm van 'de site is niet te bereiken', met de
+    oorzaak die in een cloudsessie het vaakst voorkomt: de uitgaande proxy laat
+    het domein niet door (403 of 407 op de CONNECT)."""
+    return (f'de site {site} is niet te bereiken ({e}).\n'
+            '  In een cloudsessie van Claude Code betekent een 403/407 op de verbinding dat het\n'
+            '  domein niet in de netwerkinstellingen van de omgeving staat (Allowed domains).\n'
+            '  Dat zet de eigenaar van de omgeving; een nieuwe sessie pikt het op. Lokaal:\n'
+            '  draait serveer.py, en klopt --site of REDACTIE_SITE?')
 
 
 def sleutel_uit_omgeving(als=None):

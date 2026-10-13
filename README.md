@@ -102,6 +102,17 @@ dragen, de prefix houdt ze uit elkaar), `REDACTIE_WACHTWOORD` (de redacteur) en
 `npx vic-redactie skill` zet hem in `.claude/skills/redactietafel/`. Doe dit
 opnieuw bij een nieuwe tag; Claude Code leest geen skills uit `node_modules`.
 
+## Wat een sessie nodig heeft
+
+Een Claude Code-sessie die de tafel bedient (op de documentrepo, met de skill)
+heeft drie dingen nodig, en geen daarvan komt uit de chat:
+
+| Wat | Waar het gezet wordt |
+|---|---|
+| `REDACTIE_AGENT_SLEUTEL` (mag alleen voorstellen) of `REDACTIE_WACHTWOORD` (de redacteur) | als omgevingsvariabele van de sessie: in de omgevingsinstellingen van Claude Code (cloud) of in de shell (lokaal). Dezelfde waarden staan bij Vercel op het project |
+| toegang tot het domein van de site (bv. `melk-en-meer.veenweiden.online`) | in een cloudsessie: de netwerkinstellingen van de omgeving, *Allowed domains*. Zonder dat faalt elke aanroep met 403 op de verbinding, en zegt `tafel.py` dat |
+| het pakket geïnstalleerd | `cd webapp && npm install`, eenmalig na het klonen |
+
 ## De scripts
 
 Alle drie draaien vanuit de wortel van de documentrepo en lezen `redactie.json`.
@@ -133,7 +144,8 @@ Opslag in Redis: `<prefix>laag`, `<prefix>laag:voorstel`, `<prefix>laag:afgeweze
 rollen en standen, kale Node. Faalt hard.
 
 Release = versie ophogen in `package.json` (nieuwe mogelijkheden minor, fixes
-patch), mergen, git-tag `vX.Y.Z`. Apps pinnen op de tag. Een wijziging aan de
+patch), mergen, git-tag `vX.Y.Z`. Apps pinnen op de tag, of op de commit-hash
+van die release als de tag er (nog) niet is; de twee zijn even onveranderlijk. Een wijziging aan de
 telling of aan het laagformaat is een minor en vraagt om `bouwen` in elke
 documentrepo die de tag ophoogt.
 

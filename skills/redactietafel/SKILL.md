@@ -16,6 +16,15 @@ Je sleutel is `REDACTIE_AGENT_SLEUTEL` in je omgeving; daarmee kun je voorstelle
 lezen en een eigen voorstel intrekken, en niets anders. Akkoord en afwijzen zijn
 aan de redacteur, met zijn eigen sleutel.
 
+## Wat je omgeving nodig heeft
+
+`REDACTIE_AGENT_SLEUTEL` als omgevingsvariabele (gezet door de eigenaar in de
+omgevingsinstellingen, niet via de chat), het pakket geïnstalleerd (`cd webapp
+&& npm install`), en toegang tot het domein van de site. Faalt `tafel.py stand`
+met een 403 op de verbinding, dan staat het domein niet in de netwerkinstellingen
+van de omgeving (*Allowed domains*); meld dat aan de redacteur en ga niet
+om de tafel heen werken.
+
 ## Een voorstel maken
 
 1. Zoek het blok: `tafel.py zoek "<woorden uit de zin>"`, dan `tafel.py blok <sleutel>`
