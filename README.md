@@ -32,6 +32,10 @@ cd webapp
 npm install github:Veenweiden-Innovatiecentrum/vic-redactie#v0.1.0
 ```
 
+Een commit-hash in plaats van de tag (`#0a028d8…`) werkt ook en is even
+onveranderlijk; dat is wat `melk-en-meer` doet zolang de tag er nog niet is.
+Het pakket is publiek, zodat Vercel het zonder token installeert.
+
 Daarna vijf dingen, eenmalig:
 
 **1. Het endpoint**, `webapp/api/tekstlaag.js`, drie regels:
