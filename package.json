@@ -1,0 +1,42 @@
+{
+  "name": "@veenweiden-innovatiecentrum/vic-redactie",
+  "version": "0.1.0",
+  "description": "De redactietafel als bibliotheek: tekstlaag-endpoint (Vercel/Node), redactiemodus voor in de pagina, verwerk- en tafelscripts (Python) en de skill voor een sessie. Elke documentrepo pint een git-tag, zoals bij vic-huisstijl.",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Veenweiden-Innovatiecentrum/vic-redactie.git"
+  },
+  "homepage": "https://github.com/Veenweiden-Innovatiecentrum/vic-redactie#readme",
+  "type": "commonjs",
+  "main": "api/tekstlaag.js",
+  "exports": {
+    ".": "./api/tekstlaag.js",
+    "./api/tekstlaag.js": "./api/tekstlaag.js",
+    "./client/laag.js": "./client/laag.js",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "vic-redactie": "./bin/vic-redactie.js"
+  },
+  "files": [
+    "api/",
+    "client/",
+    "py/",
+    "skills/",
+    "bin/",
+    "scripts/check.mjs"
+  ],
+  "scripts": {
+    "test": "node scripts/check.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "vic",
+    "veenweiden",
+    "redactie",
+    "tekstlaag"
+  ]
+}
