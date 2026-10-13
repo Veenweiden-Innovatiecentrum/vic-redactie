@@ -7,9 +7,28 @@
 
    De knop, de balk en hun opmaak zet dit script zelf neer. De instellingen komen
    uit data-config (JSON) of window.VIC_REDACTIE_CONFIG; wat ontbreekt krijgt een
-   standaardwaarde. Zie de README van het pakket voor de velden; `telling` is
-   dezelfde structuur die py/laag.py leest, zodat pagina en scripts dezelfde
-   sleutels geven.
+   standaardwaarde. `telling` is dezelfde structuur die py/laag.py leest, zodat
+   pagina en scripts dezelfde sleutels geven:
+
+     binnen    de omheining van de telling (standaard "main"); niet nodig als de
+               selectors van koppen en blokken al volledig zijn
+     koppen    [{tag, klasse?, nummer?}] voor een statische pagina: een kop zet de
+               teller terug en levert het nummer uit het element dat `nummer`
+               aanwijst; of [{selector, attribuut}] voor een lezer die zijn
+               hoofdstukken als sectie met een attribuut draagt (de visie:
+               [data-hoofdstuk]); dan telt alles binnen die sectie
+     blokken   tagnamen ("p") of volledige selectors ("[data-nt-sectie] p")
+     tekstDivs true: een div telt mee als hij zelf tekst draagt en geen blok bevat
+     eerste    de naam vóór de eerste kop (standaard "kop")
+     scheider  tussen kop en plaats, standaard "/" (de visie: "#")
+     vanaf     eerste plaats, standaard 1 (de visie: 0)
+     plat      "md" (standaard): vet en cursief gaan als **zo** en *zo* mee in de
+               laag en komen als <b>/<i> terug; "tekst": alleen de platte tekst,
+               zoals de visie het altijd deed
+     wachtOp   selector waarop het script wacht voor het begint (een lezer die
+               zijn tekst nog moet opbouwen, zoals React)
+     volgDom   true: bij elke verandering in de pagina opnieuw tellen en de laag
+               opnieuw leggen (een lezer die herrendert, zoals bij lang/kort)
 
    Wat het doet. De laag wordt bij het openen opgehaald en daarna elke twintig
    seconden; een gepubliceerde regel wordt over de tekst gelegd zodra `was` nog
@@ -29,11 +48,18 @@
   var SLEUTELNAAM = cfg.sleutelnaam || 'vic-redactie-sleutel';
   var COOKIENAAM = cfg.cookienaam || 'vicRedactie';
   var INTERVAL = cfg.interval || 20000;
-  var TELLING = cfg.telling || {
-    binnen: 'main',
-    koppen: [{ tag: 'h2', klasse: 'sectie', nummer: '.n' }, { tag: 'h4', nummer: 'span' }],
-    blokken: ['p', 'li', 'td'],
-    eerste: 'kop'
+  var T = cfg.telling || {};
+  var TELLING = {
+    binnen: T.binnen !== undefined ? T.binnen : 'main',
+    koppen: T.koppen || [{ tag: 'h2', klasse: 'sectie', nummer: '.n' }, { tag: 'h4', nummer: 'span' }],
+    blokken: T.blokken || ['p', 'li', 'td'],
+    tekstDivs: !!T.tekstDivs,
+    eerste: T.eerste || 'kop',
+    scheider: T.scheider || '/',
+    vanaf: T.vanaf !== undefined ? T.vanaf : 1,
+    plat: T.plat || 'md',
+    wachtOp: T.wachtOp || '',
+    volgDom: !!T.volgDom
   };
   var TEKST = Object.assign({
     knop: 'Redactiemodus', knopAan: 'Redactiemodus staat aan', bewaren: 'Bewaren',
@@ -96,7 +122,7 @@
     (kinderen || []).forEach(function(k){ e.appendChild(k); });
     return e;
   }
-  var style = el('style', { text: CSS }); document.head.appendChild(style);
+  document.head.appendChild(el('style', { text: CSS }));
   var knop = el('button', { type: 'button', id: 'vrToggle', text: TEKST.knop });
   var knopDiv = el('div', { 'class': 'vr-knop' }, [knop]);
   var bewaarKnop = el('button', { type: 'button', 'class': 'prim', text: TEKST.bewaren });
@@ -107,9 +133,11 @@
   var meldEl = el('span', { 'class': 'teller' });
   var balk = el('div', { 'class': 'vr-balk' }, [bewaarKnop, tellerEl, kopieerKnop, resetKnop, voorstelEl, meldEl]);
   document.body.appendChild(knopDiv); document.body.appendChild(balk);
+  if (!BESCHIKBAAR) knopDiv.style.display = 'none';
 
-  /* ---- platte tekst heen en terug: vet en cursief blijven, de rest is tekst ---- */
+  /* ---- platte tekst heen en terug ---- */
   function naarMd(e){
+    if (TELLING.plat === 'tekst') return (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim();
     var k = e.cloneNode(true);
     k.querySelectorAll('b,strong').forEach(function(x){ x.replaceWith('**' + x.textContent + '**'); });
     k.querySelectorAll('i,em').forEach(function(x){ x.replaceWith('*' + x.textContent + '*'); });
@@ -121,50 +149,75 @@
     s = s.replace(/(^|[^*])\*([^*\s][^*]*)\*(?!\*)/g, '$1<i>$2</i>');
     return s;
   }
+  function zetTekst(e, wordt){
+    if (TELLING.plat === 'tekst') e.textContent = wordt; else e.innerHTML = mdNaarHtml(wordt);
+  }
 
-  /* ---- de telling: elk blok een sleutel, kop + plaats, zoals "3.2/4" ----
-     Een kop zet de teller terug en geeft het nummer; elk ander element telt door.
-     Vóór de eerste kop heet het `eerste` (standaard "kop"). py/laag.py telt op
-     dezelfde manier uit dezelfde instellingen. */
-  function sel(binnen, lijst){ return lijst.map(function(x){ return (binnen ? binnen + ' ' : '') + x; }).join(', '); }
-  var kopSel = sel(TELLING.binnen, TELLING.koppen.map(function(h){ return h.tag + (h.klasse ? '.' + h.klasse : ''); }));
-  var blokSel = sel(TELLING.binnen, TELLING.blokken);
-  var blokken = [], perSleutel = {}, huidig = TELLING.eerste || 'kop', teller = 0;
-  document.querySelectorAll(kopSel + ', ' + blokSel).forEach(function(e){
-    for (var i = 0; i < TELLING.koppen.length; i++) {
-      var h = TELLING.koppen[i];
-      if (e.matches(h.tag + (h.klasse ? '.' + h.klasse : ''))) {
-        var n = h.nummer ? e.querySelector(h.nummer) : null;
-        if (n) { huidig = n.textContent.trim(); teller = 0; }
-        else if (!h.nummer) { huidig = (e.getAttribute('data-nummer') || e.id || '?'); teller = 0; }
-        return;
+  /* ---- de telling: elk blok een sleutel, kop + plaats ---- */
+  function volledig(s){ return /[\[\s.#>:]/.test(s) || !TELLING.binnen ? s : TELLING.binnen + ' ' + s; }
+  function kopSelector(h){ return h.selector || (h.tag + (h.klasse ? '.' + h.klasse : '')); }
+  function isTekstDiv(e){
+    if (e.tagName !== 'DIV') return true;
+    if (!TELLING.tekstDivs) return false;
+    if (e.querySelector('p, li, td, table, div, h1, h2, h3, h4, h5')) return false;
+    return (e.innerText || '').trim().length > 0;
+  }
+  var kopSel = TELLING.koppen.map(function(h){ return volledig(kopSelector(h)); }).join(', ');
+  var blokSel = TELLING.blokken.map(volledig).join(', ');
+  var blokken = [], perSleutel = {};
+
+  function stempel(){
+    blokken = []; perSleutel = {};
+    var huidig = TELLING.eerste, teller = TELLING.vanaf;
+    var sectieKop = TELLING.koppen.some(function(h){ return h.selector && h.attribuut; });
+    var alles = document.querySelectorAll(kopSel + ', ' + blokSel);
+    alles.forEach(function(e){
+      for (var i = 0; i < TELLING.koppen.length; i++) {
+        var h = TELLING.koppen[i];
+        if (e.matches(kopSelector(h))) {
+          if (h.attribuut) { huidig = e.getAttribute(h.attribuut) || '?'; teller = TELLING.vanaf; return; }
+          var n = h.nummer ? e.querySelector(h.nummer) : null;
+          if (n) { huidig = n.textContent.trim(); teller = TELLING.vanaf; }
+          else if (!h.nummer) { huidig = e.getAttribute('data-nummer') || e.id || '?'; teller = TELLING.vanaf; }
+          return;
+        }
       }
-    }
-    teller++;
-    var sleutel = huidig + '/' + teller;
-    e.setAttribute('data-blok', sleutel);
-    var md = naarMd(e);
-    var b = { el: e, sleutel: sleutel, hoofdstuk: huidig, origineelMd: md, origineelHtml: e.innerHTML, stand: md };
-    blokken.push(b); perSleutel[sleutel] = b;
-  });
+      if (!isTekstDiv(e)) return;
+      if (sectieKop) {
+        // een blok hoort bij de sectie waar het in staat, niet bij de laatst geziene
+        var sec = null;
+        for (var j = 0; j < TELLING.koppen.length && !sec; j++) if (TELLING.koppen[j].attribuut) sec = e.closest(TELLING.koppen[j].selector);
+        var naam = sec ? (sec.getAttribute(TELLING.koppen[0].attribuut) || '?') : TELLING.eerste;
+        if (naam !== huidig) { huidig = naam; teller = TELLING.vanaf; }
+      }
+      var sleutel = huidig + TELLING.scheider + teller; teller++;
+      e.setAttribute('data-blok', sleutel);
+      var md = e.dataset.laagWas !== undefined ? e.dataset.laagWas : naarMd(e);
+      var b = { el: e, sleutel: sleutel, hoofdstuk: huidig, origineelMd: md, origineelHtml: e.dataset.laagWas !== undefined ? (e.dataset.laagOrigineel || e.innerHTML) : e.innerHTML, stand: naarMd(e) };
+      blokken.push(b); perSleutel[sleutel] = b;
+    });
+  }
 
   /* ---- de laag toepassen: dit doet elke bezoeker ---- */
+  var eigenWijziging = false;
   function pasToe(regels){
+    eigenWijziging = true;
     blokken.forEach(function(b){
       var regel = regels[b.sleutel];
       if (!regel) {
         if (b.el.dataset.laagWas !== undefined) {
           b.el.innerHTML = b.origineelHtml; b.el.style.display = '';
-          delete b.el.dataset.laagWas; b.stand = b.origineelMd;
+          delete b.el.dataset.laagWas; delete b.el.dataset.laagOrigineel; b.stand = b.origineelMd;
         }
         return;
       }
       var gepubliceerd = b.el.dataset.laagWas !== undefined ? b.el.dataset.laagWas : naarMd(b.el);
       if (gepubliceerd.trim() !== String(regel.was).trim()) return;   // de bron is al bij
-      b.el.dataset.laagWas = gepubliceerd;
+      if (b.el.dataset.laagWas === undefined) { b.el.dataset.laagWas = gepubliceerd; b.el.dataset.laagOrigineel = b.el.innerHTML; }
       if (!String(regel.wordt).trim()) { b.el.style.display = 'none'; b.stand = ''; }
-      else { b.el.style.display = ''; b.el.innerHTML = mdNaarHtml(regel.wordt); b.stand = naarMd(b.el); }
+      else { b.el.style.display = ''; zetTekst(b.el, regel.wordt); b.stand = naarMd(b.el); }
     });
+    setTimeout(function(){ eigenWijziging = false; }, 0);
   }
   function toonVoorstellen(voorgesteld){
     var n = 0;
@@ -177,106 +230,140 @@
     voorstelEl.textContent = n ? n + ' voorstel' + (n === 1 ? '' : 'len') + ' wacht op de redacteur' : '';
   }
 
-  var laagVersie = null, laagStop = false, laagEerste = true;
-  function haalLaag(){
+  var laagVersie = null, laagStop = false, laagEerste = true, laatsteLaag = null;
+  function haalLaag(opnieuw){
     var kop = {}; var sl = redactieSleutel(); if (sl) kop['x-redactie-sleutel'] = sl;
     fetch(LAAG_PAD, { cache: 'no-store', headers: kop })
       .then(function(r){ if (!r.ok) throw 0; return r.json(); })
       .then(function(d){
         laagEerste = false;
-        if (d && d.versie !== laagVersie) { laagVersie = d.versie; pasToe(d.blokken || {}); toonVoorstellen(d.voorgesteld || {}); }
+        if (d && (opnieuw || d.versie !== laagVersie)) { laagVersie = d.versie; laatsteLaag = d; pasToe(d.blokken || {}); toonVoorstellen(d.voorgesteld || {}); }
       })
       .catch(function(){ if (laagEerste) laagStop = true; });
   }
-  try { haalLaag(); } catch (e) { laagStop = true; }
-  var laagKlok = setInterval(function(){
-    if (laagStop) { clearInterval(laagKlok); return; }
-    if (document.hidden) return;                      // slapen op een achtergrondtab
-    if (!window.VIC_REDACTIE) haalLaag();
-  }, INTERVAL);
-  document.addEventListener('visibilitychange', function(){ if (!document.hidden && !laagStop && !window.VIC_REDACTIE) haalLaag(); });
 
-  if (!BESCHIKBAAR) { knopDiv.style.display = 'none'; return; }
+  /* ---- starten: meteen, of pas als de lezer zijn tekst heeft opgebouwd ---- */
+  var gestart = false;
+  function start(){
+    if (gestart) return; gestart = true;
+    stempel();
+    try { haalLaag(true); } catch (e) { laagStop = true; }
+    var laagKlok = setInterval(function(){
+      if (laagStop) { clearInterval(laagKlok); return; }
+      if (document.hidden) return;
+      if (!window.VIC_REDACTIE) haalLaag();
+    }, INTERVAL);
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden && !laagStop && !window.VIC_REDACTIE) haalLaag(); });
+    if (TELLING.volgDom) {
+      var wacht = null;
+      new MutationObserver(function(){
+        if (eigenWijziging || window.VIC_REDACTIE) return;
+        clearTimeout(wacht);
+        wacht = setTimeout(function(){
+          var n = document.querySelectorAll(blokSel).length;
+          if (n === blokken.length && blokken.every(function(b){ return document.contains(b.el); })) return;
+          stempel();
+          if (laatsteLaag) { pasToe(laatsteLaag.blokken || {}); toonVoorstellen(laatsteLaag.voorgesteld || {}); }
+        }, 300);
+      }).observe(document.body, { childList: true, subtree: true });
+    }
+    if (BESCHIKBAAR) redactie();
+  }
+  if (TELLING.wachtOp) {
+    var wachter = setInterval(function(){
+      if (document.querySelector(TELLING.wachtOp)) { clearInterval(wachter); start(); }
+    }, 200);
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
 
   /* ---- redactiemodus: typen, tellen, bewaren ---- */
-  function meld(t){ meldEl.textContent = t || ''; }
-  var aan = false;
-  knop.addEventListener('click', function(){
-    aan = !aan; window.VIC_REDACTIE = aan;
-    document.body.classList.toggle('redactie', aan);
-    knop.classList.toggle('aan', aan);
-    knop.textContent = aan ? TEKST.knopAan : TEKST.knop;
-    blokken.forEach(function(b){ b.el.contentEditable = aan ? 'true' : 'false'; });
-    meld('');
-  });
-
-  function gewijzigd(){
-    var uit = [];
-    blokken.forEach(function(b){
-      if (b.el.style.display === 'none') return;
-      var nu = naarMd(b.el);
-      if (nu === b.stand) return;
-      var was = b.el.dataset.laagWas !== undefined ? b.el.dataset.laagWas : b.origineelMd;
-      uit.push({ sleutel: b.sleutel, hoofdstuk: b.hoofdstuk, was: was, wordt: nu, blok: b });
+  function redactie(){
+    function meld(t){ meldEl.textContent = t || ''; }
+    var aan = false;
+    function zetBewerkbaar(){ blokken.forEach(function(b){ b.el.contentEditable = aan ? 'true' : 'false'; }); }
+    knop.addEventListener('click', function(){
+      aan = !aan; window.VIC_REDACTIE = aan;
+      document.body.classList.toggle('redactie', aan);
+      knop.classList.toggle('aan', aan);
+      knop.textContent = aan ? TEKST.knopAan : TEKST.knop;
+      zetBewerkbaar();
+      meld('');
     });
-    return uit;
-  }
-  function herteken(){
-    var n = 0;
-    blokken.forEach(function(b){
-      var gew = b.el.style.display !== 'none' && naarMd(b.el) !== b.stand;
-      b.el.classList.toggle('gewijzigd', gew);
-      if (gew) n++;
+
+    function gewijzigd(){
+      var uit = [];
+      blokken.forEach(function(b){
+        if (b.el.style.display === 'none') return;
+        var nu = naarMd(b.el);
+        if (nu === b.stand) return;
+        var was = b.el.dataset.laagWas !== undefined ? b.el.dataset.laagWas : b.origineelMd;
+        uit.push({ sleutel: b.sleutel, hoofdstuk: b.hoofdstuk, was: was, wordt: nu, blok: b });
+      });
+      return uit;
+    }
+    function herteken(){
+      var n = 0;
+      blokken.forEach(function(b){
+        var gew = b.el.style.display !== 'none' && naarMd(b.el) !== b.stand;
+        b.el.classList.toggle('gewijzigd', gew);
+        if (gew) n++;
+      });
+      tellerEl.textContent = n + ' ' + TEKST.gewijzigd;
+    }
+    document.addEventListener('input', function(e){ if (e.target.closest && e.target.closest('[data-blok]')) herteken(); });
+
+    function dump(rij){
+      return rij.map(function(w){ return '### ' + w.sleutel + '\nWAS: ' + w.was + '\nWORDT: ' + (w.wordt || '(weggehaald)'); }).join('\n\n');
+    }
+
+    var bezig = false;
+    bewaarKnop.addEventListener('click', function(){
+      var rij = gewijzigd();
+      if (!rij.length || bezig) { if (!rij.length) meld('geen wijzigingen'); return; }
+      bezig = true; meld('bewaren…');
+      fetch(LAAG_PAD, { method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-redactie-sleutel': redactieSleutel() },
+        body: JSON.stringify({ wijzigingen: rij.map(function(w){ return { sleutel: w.sleutel, hoofdstuk: w.hoofdstuk, was: w.was, wordt: w.wordt }; }) }) })
+        .then(function(r){ return r.json(); })
+        .then(function(a){
+          if (!a.ok) throw new Error(a.fout || 'onbekende fout');
+          rij.forEach(function(w){
+            if (w.wordt.trim() === w.was.trim()) { delete w.blok.el.dataset.laagWas; delete w.blok.el.dataset.laagOrigineel; }
+            else if (w.blok.el.dataset.laagWas === undefined) { w.blok.el.dataset.laagWas = w.was; w.blok.el.dataset.laagOrigineel = w.blok.origineelHtml; }
+            w.blok.stand = w.wordt;
+            if (!w.wordt.trim()) w.blok.el.style.display = 'none';
+          });
+          herteken();
+          meld((a.bewaard || rij.length) + ' ' + TEKST.bewaard);
+        })
+        .catch(function(e){ meld('bewaren lukte niet (' + e.message + ') — kopieer hieronder, dan is er niets weg'); toonKopie(dump(rij)); })
+        .then(function(){ bezig = false; });
     });
-    tellerEl.textContent = n + ' ' + TEKST.gewijzigd;
+    kopieerKnop.addEventListener('click', function(){ var rij = gewijzigd(); toonKopie(rij.length ? dump(rij) : 'Nog geen wijzigingen.'); });
+    resetKnop.addEventListener('click', function(){ if (confirm('Alle niet-bewaarde wijzigingen in dit venster terugzetten?')) location.reload(); });
+
+    function toonKopie(tekst){
+      var ta = el('textarea', { spellcheck: 'false' }); ta.value = tekst;
+      var okKnop = el('button', { type: 'button', text: 'Kopieer naar klembord' });
+      var dicht = el('button', { type: 'button', text: 'Sluiten' });
+      var laag = el('div', { 'class': 'vr-kopie' }, [el('div', { 'class': 'doos' }, [ta, el('div', { 'class': 'rij' }, [okKnop, dicht,
+        el('span', { style: 'font-size:12.5px;color:var(--vr-grijs)', text: 'Lukt kopiëren niet, selecteer dan handmatig.' })])])]);
+      document.body.appendChild(laag); ta.select();
+      okKnop.addEventListener('click', function(){
+        ta.select(); var gelukt = false;
+        try { gelukt = document.execCommand('copy'); } catch (e) {}
+        if (!gelukt && navigator.clipboard) navigator.clipboard.writeText(tekst).catch(function(){});
+        okKnop.textContent = 'Gekopieerd';
+      });
+      dicht.addEventListener('click', function(){ laag.remove(); });
+      laag.addEventListener('click', function(e){ if (e.target === laag) laag.remove(); });
+    }
+
+    // na een herrender (volgDom) moeten nieuwe blokken ook bewerkbaar zijn
+    if (TELLING.volgDom) new MutationObserver(function(){ if (aan && !eigenWijziging) zetBewerkbaar(); }).observe(document.body, { childList: true, subtree: true });
+    herteken();
   }
-  document.addEventListener('input', function(e){ if (e.target.closest && e.target.closest('[data-blok]')) herteken(); });
-
-  function dump(rij){
-    return rij.map(function(w){ return '### ' + w.sleutel + '\nWAS: ' + w.was + '\nWORDT: ' + (w.wordt || '(weggehaald)'); }).join('\n\n');
-  }
-
-  var bezig = false;
-  bewaarKnop.addEventListener('click', function(){
-    var rij = gewijzigd();
-    if (!rij.length || bezig) { if (!rij.length) meld('geen wijzigingen'); return; }
-    bezig = true; meld('bewaren…');
-    fetch(LAAG_PAD, { method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-redactie-sleutel': redactieSleutel() },
-      body: JSON.stringify({ wijzigingen: rij.map(function(w){ return { sleutel: w.sleutel, hoofdstuk: w.hoofdstuk, was: w.was, wordt: w.wordt }; }) }) })
-      .then(function(r){ return r.json(); })
-      .then(function(a){
-        if (!a.ok) throw new Error(a.fout || 'onbekende fout');
-        rij.forEach(function(w){
-          if (w.wordt.trim() === w.was.trim()) delete w.blok.el.dataset.laagWas; else w.blok.el.dataset.laagWas = w.was;
-          w.blok.stand = w.wordt;
-          if (!w.wordt.trim()) w.blok.el.style.display = 'none';
-        });
-        herteken();
-        meld((a.bewaard || rij.length) + ' ' + TEKST.bewaard);
-      })
-      .catch(function(e){ meld('bewaren lukte niet (' + e.message + ') — kopieer hieronder, dan is er niets weg'); toonKopie(dump(rij)); })
-      .then(function(){ bezig = false; });
-  });
-  kopieerKnop.addEventListener('click', function(){ var rij = gewijzigd(); toonKopie(rij.length ? dump(rij) : 'Nog geen wijzigingen.'); });
-  resetKnop.addEventListener('click', function(){ if (confirm('Alle niet-bewaarde wijzigingen in dit venster terugzetten?')) location.reload(); });
-
-  function toonKopie(tekst){
-    var ta = el('textarea', { spellcheck: 'false' }); ta.value = tekst;
-    var okKnop = el('button', { type: 'button', text: 'Kopieer naar klembord' });
-    var dicht = el('button', { type: 'button', text: 'Sluiten' });
-    var laag = el('div', { 'class': 'vr-kopie' }, [el('div', { 'class': 'doos' }, [ta, el('div', { 'class': 'rij' }, [okKnop, dicht,
-      el('span', { style: 'font-size:12.5px;color:var(--vr-grijs)', text: 'Lukt kopiëren niet, selecteer dan handmatig.' })])])]);
-    document.body.appendChild(laag); ta.select();
-    okKnop.addEventListener('click', function(){
-      ta.select(); var gelukt = false;
-      try { gelukt = document.execCommand('copy'); } catch (e) {}
-      if (!gelukt && navigator.clipboard) navigator.clipboard.writeText(tekst).catch(function(){});
-      okKnop.textContent = 'Gekopieerd';
-    });
-    dicht.addEventListener('click', function(){ laag.remove(); });
-    laag.addEventListener('click', function(e){ if (e.target === laag) laag.remove(); });
-  }
-
-  herteken();
 })();

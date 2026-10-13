@@ -82,8 +82,16 @@ Het script zet de knop, de balk en hun opmaak zelf neer. Kleuren volgen
 en levert het nummer, elk ander element telt door, dus `3.2/4`. Het script in de
 pagina en de Python-scripts lezen dezelfde structuur, zodat zij dezelfde
 sleutels geven. `soort` is `html` (één bronbestand) of `md` (een map met één
-Markdown-bestand per hoofdstuk, zoals de visie; de telling komt dan uit de lezer
-zelf en de sleutel is `bestand#plaats`).
+Markdown-bestand per hoofdstuk, zoals de visie).
+
+Een lezer die zijn tekst zelf opbouwt (React, zoals de visie) krijgt een andere
+`telling`, alleen in de scripttag: `koppen: [{selector, attribuut}]` (de sectie
+en het attribuut dat het hoofdstuk noemt), `blokken` als volledige selectors,
+`tekstDivs`, `scheider: "#"`, `vanaf: 0`, `plat: "tekst"` (geen sterretjes voor
+vet), `wachtOp` (de selector waarop het script wacht) en `volgDom` (opnieuw
+tellen als de lezer herrendert). De Python-kant heeft die telling bij `md` niet
+nodig: de sleutels komen uit de laag zelf. De volledige lijst staat bovenin
+`client/laag.js`.
 
 **4. De omgevingsvariabelen** op het Vercel-project: `UPSTASH_REDIS_REST_URL`,
 `UPSTASH_REDIS_REST_TOKEN` (Storage → Connect; één store mag meerdere documenten
